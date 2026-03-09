@@ -12,7 +12,11 @@ on:
       image_name:
         description: Docker Hub repository name under your namespace
         required: false
-        default: my-dev-image
+        default: sglang
+      image_tag:
+        description: Primary Docker tag to publish
+        required: false
+        default: dev
   push:
     branches:
       - main
@@ -23,7 +27,8 @@ on:
 
 env:
   DEFAULT_BASE_IMAGE: lmsysorg/sglang:dev
-  DEFAULT_IMAGE_NAME: my-dev-image
+  DEFAULT_IMAGE_NAME: sglang
+  DEFAULT_IMAGE_TAG: dev
   DEFAULT_PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
@@ -41,6 +46,7 @@ jobs:
         run: |
           base_image="${{ github.event.inputs.base_image }}"
           image_name="${{ github.event.inputs.image_name }}"
+          image_tag="${{ github.event.inputs.image_tag }}"
 
           if [ -z "$base_image" ]; then
             base_image="${DEFAULT_BASE_IMAGE}"
@@ -50,10 +56,15 @@ jobs:
             image_name="${DEFAULT_IMAGE_NAME}"
           fi
 
+          if [ -z "$image_tag" ]; then
+            image_tag="${DEFAULT_IMAGE_TAG}"
+          fi
+
           safe_base_tag="$(echo "$base_image" | tr '/:' '--' | tr -cd '[:alnum:]-._')"
 
           echo "base_image=$base_image" >> "$GITHUB_OUTPUT"
           echo "image_name=$image_name" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$image_tag" >> "$GITHUB_OUTPUT"
           echo "safe_base_tag=$safe_base_tag" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
@@ -74,10 +85,7 @@ jobs:
         with:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ steps.cfg.outputs.image_name }}
           tags: |
-            type=raw,value=latest
-            type=raw,value=${{ steps.cfg.outputs.safe_base_tag }}
-            type=raw,value={{date 'YYYYMMDD-HHmmss'}}
-            type=sha,prefix=git-
+            type=raw,value=${{ steps.cfg.outputs.image_tag }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.description=Extended dev image built from ${{ steps.cfg.outputs.base_image }}
