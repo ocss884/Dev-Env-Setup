@@ -1,0 +1,96 @@
+name: Build and Push Dev Image
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      base_image:
+        description: Base image to extend
+        required: false
+        default: lmsysorg/sglang:dev
+      image_name:
+        description: Docker Hub repository name under your namespace
+        required: false
+        default: my-dev-image
+  push:
+    branches:
+      - main
+    paths:
+      - docker/Dockerfile
+      - docker/.dockerignore
+      - .github/workflows/build-and-push.yml
+
+env:
+  DEFAULT_BASE_IMAGE: lmsysorg/sglang:dev
+  DEFAULT_IMAGE_NAME: my-dev-image
+  DEFAULT_PLATFORMS: linux/amd64,linux/arm64
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve build settings
+        id: cfg
+        shell: bash
+        run: |
+          base_image="${{ github.event.inputs.base_image }}"
+          image_name="${{ github.event.inputs.image_name }}"
+
+          if [ -z "$base_image" ]; then
+            base_image="${DEFAULT_BASE_IMAGE}"
+          fi
+
+          if [ -z "$image_name" ]; then
+            image_name="${DEFAULT_IMAGE_NAME}"
+          fi
+
+          safe_base_tag="$(echo "$base_image" | tr '/:' '--' | tr -cd '[:alnum:]-._')"
+
+          echo "base_image=$base_image" >> "$GITHUB_OUTPUT"
+          echo "image_name=$image_name" >> "$GITHUB_OUTPUT"
+          echo "safe_base_tag=$safe_base_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Generate Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ steps.cfg.outputs.image_name }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ steps.cfg.outputs.safe_base_tag }}
+            type=raw,value={{date 'YYYYMMDD-HHmmss'}}
+            type=sha,prefix=git-
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.description=Extended dev image built from ${{ steps.cfg.outputs.base_image }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./docker
+          file: ./docker/Dockerfile
+          platforms: ${{ env.DEFAULT_PLATFORMS }}
+          pull: true
+          push: true
+          build-args: |
+            BASE_IMAGE=${{ steps.cfg.outputs.base_image }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
