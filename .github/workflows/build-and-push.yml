@@ -37,7 +37,6 @@ jobs:
       base_image: ${{ steps.cfg.outputs.base_image }}
       image_name: ${{ steps.cfg.outputs.image_name }}
       image_tag: ${{ steps.cfg.outputs.image_tag }}
-      image_repo: ${{ steps.cfg.outputs.image_repo }}
     steps:
       - name: Resolve build settings
         id: cfg
@@ -59,12 +58,9 @@ jobs:
             image_tag="${DEFAULT_IMAGE_TAG}"
           fi
 
-          image_repo="${{ secrets.DOCKERHUB_USERNAME }}/${image_name}"
-
           echo "base_image=$base_image" >> "$GITHUB_OUTPUT"
           echo "image_name=$image_name" >> "$GITHUB_OUTPUT"
           echo "image_tag=$image_tag" >> "$GITHUB_OUTPUT"
-          echo "image_repo=$image_repo" >> "$GITHUB_OUTPUT"
 
   build:
     runs-on: ubuntu-latest
@@ -118,7 +114,7 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.description=Extended dev image built from ${{ needs.prepare.outputs.base_image }}
-          outputs: type=image,name=${{ needs.prepare.outputs.image_repo }},name-canonical=true,push-by-digest=true
+          outputs: type=image,name=${{ secrets.DOCKERHUB_USERNAME }}/${{ needs.prepare.outputs.image_name }},name-canonical=true,push-by-digest=true
 
       - name: Export digest
         shell: bash
@@ -162,5 +158,5 @@ jobs:
         shell: bash
         run: |
           docker buildx imagetools create \
-            --tag "${{ needs.prepare.outputs.image_repo }}:${{ needs.prepare.outputs.image_tag }}" \
-            $(printf '%s@sha256:%s ' "${{ needs.prepare.outputs.image_repo }}" *)
+            --tag "${{ secrets.DOCKERHUB_USERNAME }}/${{ needs.prepare.outputs.image_name }}:${{ needs.prepare.outputs.image_tag }}" \
+            $(printf '%s@sha256:%s ' "${{ secrets.DOCKERHUB_USERNAME }}/${{ needs.prepare.outputs.image_name }}" *)
