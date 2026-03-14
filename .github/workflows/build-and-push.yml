@@ -157,6 +157,17 @@ jobs:
         working-directory: /tmp/digests
         shell: bash
         run: |
+          shopt -s nullglob
+          refs=()
+          for digest_file in *; do
+            refs+=("${{ secrets.DOCKERHUB_USERNAME }}/${{ needs.prepare.outputs.image_name }}@sha256:${digest_file}")
+          done
+
+          if [ "${#refs[@]}" -eq 0 ]; then
+            echo "No digests were downloaded for manifest creation" >&2
+            exit 1
+          fi
+
           docker buildx imagetools create \
             --tag "${{ secrets.DOCKERHUB_USERNAME }}/${{ needs.prepare.outputs.image_name }}:${{ needs.prepare.outputs.image_tag }}" \
-            $(printf '%s@sha256:%s ' "${{ secrets.DOCKERHUB_USERNAME }}/${{ needs.prepare.outputs.image_name }}" *)
+            "${refs[@]}"
