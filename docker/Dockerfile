@@ -5,6 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ARG TARGETARCH
 ARG VSCODE_QUALITY=stable
 ARG VSCODE_SERVER_DIR=/root/.vscode-server
+ARG VSCODE_EXTENSIONS_DIR=/root/.vscode-server/extensions
 
 # Add the development tools that should always exist on top of the upstream image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -38,11 +39,14 @@ RUN set -eux; \
     vscode_commit="$(printf '%s' "${vscode_json}" | jq -r '.version')"; \
     vscode_url="$(printf '%s' "${vscode_json}" | jq -r '.url')"; \
     mkdir -p "${VSCODE_SERVER_DIR}/bin/${vscode_commit}"; \
+    mkdir -p "${VSCODE_EXTENSIONS_DIR}"; \
     curl -fsSL "${vscode_url}" -o /tmp/vscode-server.tar.gz; \
     tar -xzf /tmp/vscode-server.tar.gz -C "${VSCODE_SERVER_DIR}/bin/${vscode_commit}" --strip-components=1; \
     rm /tmp/vscode-server.tar.gz; \
-    "${VSCODE_SERVER_DIR}/bin/${vscode_commit}/bin/code-server" \
+    "${VSCODE_SERVER_DIR}/bin/${vscode_commit}/bin/code" \
       --force \
+      --user-data-dir "${VSCODE_SERVER_DIR}/data" \
+      --extensions-dir "${VSCODE_EXTENSIONS_DIR}" \
       --install-extension ms-python.python \
       --install-extension ms-python.vscode-pylance \
       --install-extension ms-python.debugpy \
