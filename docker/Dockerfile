@@ -2,6 +2,7 @@ ARG BASE_IMAGE=lmsysorg/sglang:dev
 FROM ${BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
 ARG VSCODE_QUALITY=stable
 ARG VSCODE_SERVER_DIR=/root/.vscode-server
 
@@ -27,8 +28,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install the latest VS Code Server for the requested quality and pre-install
 # the editor extensions needed in the dev image.
 RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) vscode_arch="x64" ;; \
+      arm64) vscode_arch="arm64" ;; \
+      *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
     mkdir -p "${VSCODE_SERVER_DIR}"; \
-    vscode_json="$(curl -fsSL "https://update.code.visualstudio.com/api/update/linux-x64/${VSCODE_QUALITY}/latest")"; \
+    vscode_json="$(curl -fsSL "https://update.code.visualstudio.com/api/update/linux-${vscode_arch}/${VSCODE_QUALITY}/latest")"; \
     vscode_commit="$(printf '%s' "${vscode_json}" | jq -r '.version')"; \
     vscode_url="$(printf '%s' "${vscode_json}" | jq -r '.url')"; \
     mkdir -p "${VSCODE_SERVER_DIR}/bin/${vscode_commit}"; \
