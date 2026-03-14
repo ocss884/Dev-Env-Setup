@@ -2,6 +2,7 @@ ARG BASE_IMAGE=lmsysorg/sglang:dev
 FROM ${BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH=/root/.local/bin:${PATH}
 ARG TARGETARCH
 ARG VSCODE_QUALITY=stable
 ARG VSCODE_SERVER_DIR=/root/.vscode-server
@@ -13,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     dnsutils \
+    duf \
     git \
     htop \
     iproute2 \
@@ -20,11 +22,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     less \
     net-tools \
+    npm \
+    pipx \
     procps \
     tmux \
     vim \
     wget \
     && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g @openai/codex @anthropic-ai/claude-code \
+    && pipx install nvitop
 
 # Install the latest VS Code Server for the requested quality and pre-install
 # the editor extensions needed in the dev image.
