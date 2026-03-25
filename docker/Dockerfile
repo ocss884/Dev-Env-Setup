@@ -26,12 +26,36 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pipx \
     procps \
     tmux \
+    unzip \
     vim \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g @openai/codex @anthropic-ai/claude-code \
     && pipx install nvitop
+
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) \
+        yazi_arch="x86_64-unknown-linux-musl"; \
+        lazygit_arch="x86_64"; \
+        ;; \
+      arm64) \
+        yazi_arch="aarch64-unknown-linux-musl"; \
+        lazygit_arch="arm64"; \
+        ;; \
+      *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    yazi_version="$(curl -fsSL https://api.github.com/repos/sxyazi/yazi/releases/latest | jq -r '.tag_name')"; \
+    lazygit_version="$(curl -fsSL https://api.github.com/repos/jesseduffield/lazygit/releases/latest | jq -r '.tag_name')"; \
+    curl -fsSL "https://github.com/sxyazi/yazi/releases/download/${yazi_version}/yazi-${yazi_arch}.zip" -o /tmp/yazi.zip; \
+    unzip -q /tmp/yazi.zip -d /tmp/yazi; \
+    install -m 0755 "/tmp/yazi/yazi-${yazi_arch}/yazi" /usr/local/bin/yazi; \
+    install -m 0755 "/tmp/yazi/yazi-${yazi_arch}/ya" /usr/local/bin/ya; \
+    curl -fsSL "https://github.com/jesseduffield/lazygit/releases/download/${lazygit_version}/lazygit_${lazygit_version#v}_linux_${lazygit_arch}.tar.gz" -o /tmp/lazygit.tar.gz; \
+    tar -xzf /tmp/lazygit.tar.gz -C /tmp lazygit; \
+    install -m 0755 /tmp/lazygit /usr/local/bin/lazygit; \
+    rm -rf /tmp/yazi /tmp/yazi.zip /tmp/lazygit /tmp/lazygit.tar.gz
 
 # Install the latest VS Code Server for the requested quality and pre-install
 # the editor extensions needed in the dev image.
