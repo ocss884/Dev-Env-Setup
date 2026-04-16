@@ -3,7 +3,9 @@ FROM ${BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH=/root/.local/bin:${PATH}
+ENV SHELL=/usr/bin/zsh
 ARG TARGETARCH
+ARG SSH_PUBLIC_KEY
 ARG VSCODE_QUALITY=stable
 ARG VSCODE_SERVER_DIR=/root/.vscode-server
 ARG VSCODE_EXTENSIONS_DIR=/root/.vscode-server/extensions
@@ -25,11 +27,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     npm \
     pipx \
     procps \
+    openssh-server \
     tmux \
     unzip \
     vim \
     wget \
+    zsh \
     && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /run/sshd \
+    && mkdir -p /root/.ssh \
+    && chmod 700 /root/.ssh \
+    && if [ -n "${SSH_PUBLIC_KEY}" ]; then \
+         printf '%s\n' "${SSH_PUBLIC_KEY}" > /root/.ssh/authorized_keys; \
+         chmod 600 /root/.ssh/authorized_keys; \
+       fi \
+    && chsh -s /usr/bin/zsh root
+
+RUN printf '%s\n' \
+    'PubkeyAuthentication yes' \
+    'AuthorizedKeysFile .ssh/authorized_keys' \
+    > /etc/ssh/sshd_config.d/10-codex-sshd.conf
 
 RUN npm install -g @openai/codex @anthropic-ai/claude-code \
     && pipx install nvitop
@@ -100,4 +118,6 @@ RUN set -eux; \
       --install-extension openai.chatgpt \
       --install-extension github.copilot-chat
 
-CMD ["/bin/bash"]
+EXPOSE 22
+
+CMD ["/usr/bin/zsh", "-lc", "mkdir -p /run/sshd && ssh-keygen -A >/dev/null 2>&1 && exec /usr/sbin/sshd -D"]

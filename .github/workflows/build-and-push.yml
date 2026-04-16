@@ -111,6 +111,7 @@ jobs:
           push: true
           build-args: |
             BASE_IMAGE=${{ needs.prepare.outputs.base_image }}
+            SSH_PUBLIC_KEY=${{ secrets.SSH_PUBLIC_KEY }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.description=Extended dev image built from ${{ needs.prepare.outputs.base_image }}
