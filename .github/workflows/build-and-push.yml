@@ -5,16 +5,26 @@ on:
     - cron: "0 3 * * *"
   workflow_dispatch:
     inputs:
+      build_variant:
+        description: Image variant to build
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - dev
+          - dev-cu13
+          - custom
       base_image:
-        description: Base image to extend
+        description: Base image to extend when build_variant is custom
         required: false
         default: lmsysorg/sglang:dev
       image_name:
-        description: Docker Hub repository name under your namespace
+        description: Docker Hub repository name under your namespace when build_variant is custom
         required: false
         default: sglang
       image_tag:
-        description: Primary Docker tag to publish
+        description: Primary Docker tag to publish when build_variant is custom
         required: false
         default: dev
   push:
@@ -27,24 +37,31 @@ on:
 
 env:
   DEFAULT_BASE_IMAGE: lmsysorg/sglang:dev
+  DEFAULT_CU13_BASE_IMAGE: lmsysorg/sglang:dev-cu13
   DEFAULT_IMAGE_NAME: sglang
   DEFAULT_IMAGE_TAG: dev
+  DEFAULT_CU13_IMAGE_TAG: dev-cu13
+  DEFAULT_BUILD_VARIANT: all
 
 jobs:
   prepare:
     runs-on: ubuntu-latest
     outputs:
-      base_image: ${{ steps.cfg.outputs.base_image }}
-      image_name: ${{ steps.cfg.outputs.image_name }}
-      image_tag: ${{ steps.cfg.outputs.image_tag }}
+      variant_matrix: ${{ steps.cfg.outputs.variant_matrix }}
+      build_matrix: ${{ steps.cfg.outputs.build_matrix }}
     steps:
       - name: Resolve build settings
         id: cfg
         shell: bash
         run: |
+          build_variant="${{ github.event.inputs.build_variant }}"
           base_image="${{ github.event.inputs.base_image }}"
           image_name="${{ github.event.inputs.image_name }}"
           image_tag="${{ github.event.inputs.image_tag }}"
+
+          if [ -z "$build_variant" ]; then
+            build_variant="${DEFAULT_BUILD_VARIANT}"
+          fi
 
           if [ -z "$base_image" ]; then
             base_image="${DEFAULT_BASE_IMAGE}"
@@ -58,19 +75,64 @@ jobs:
             image_tag="${DEFAULT_IMAGE_TAG}"
           fi
 
-          echo "base_image=$base_image" >> "$GITHUB_OUTPUT"
-          echo "image_name=$image_name" >> "$GITHUB_OUTPUT"
-          echo "image_tag=$image_tag" >> "$GITHUB_OUTPUT"
+          case "$build_variant" in
+            all)
+              variant_matrix="$(jq -cn \
+                --arg default_base_image "$DEFAULT_BASE_IMAGE" \
+                --arg cu13_base_image "$DEFAULT_CU13_BASE_IMAGE" \
+                --arg image_name "$DEFAULT_IMAGE_NAME" \
+                --arg default_image_tag "$DEFAULT_IMAGE_TAG" \
+                --arg cu13_image_tag "$DEFAULT_CU13_IMAGE_TAG" \
+                '{include:[
+                  {variant:"dev",base_image:$default_base_image,image_name:$image_name,image_tag:$default_image_tag},
+                  {variant:"dev-cu13",base_image:$cu13_base_image,image_name:$image_name,image_tag:$cu13_image_tag}
+                ]}')"
+              ;;
+            dev)
+              variant_matrix="$(jq -cn \
+                --arg base_image "$DEFAULT_BASE_IMAGE" \
+                --arg image_name "$DEFAULT_IMAGE_NAME" \
+                --arg image_tag "$DEFAULT_IMAGE_TAG" \
+                '{include:[{variant:"dev",base_image:$base_image,image_name:$image_name,image_tag:$image_tag}]}')"
+              ;;
+            dev-cu13)
+              variant_matrix="$(jq -cn \
+                --arg base_image "$DEFAULT_CU13_BASE_IMAGE" \
+                --arg image_name "$DEFAULT_IMAGE_NAME" \
+                --arg image_tag "$DEFAULT_CU13_IMAGE_TAG" \
+                '{include:[{variant:"dev-cu13",base_image:$base_image,image_name:$image_name,image_tag:$image_tag}]}')"
+              ;;
+            custom)
+              variant_matrix="$(jq -cn \
+                --arg base_image "$base_image" \
+                --arg image_name "$image_name" \
+                --arg image_tag "$image_tag" \
+                '{include:[{variant:"custom",base_image:$base_image,image_name:$image_name,image_tag:$image_tag}]}')"
+              ;;
+            *)
+              echo "Unsupported build_variant: $build_variant" >&2
+              exit 1
+              ;;
+          esac
+
+          build_matrix="$(jq -c '
+            {include: [
+              .include[] as $variant
+              | ["linux/amd64","linux/arm64"][] as $platform
+              | $variant + {platform:$platform, arch: ($platform | split("/") | .[1])}
+            ]}
+          ' <<< "$variant_matrix")"
+
+          echo "variant_matrix=$variant_matrix" >> "$GITHUB_OUTPUT"
+          echo "build_matrix=$build_matrix" >> "$GITHUB_OUTPUT"
 
   build:
+    name: Build ${{ matrix.variant }} ${{ matrix.platform }}
     runs-on: ubuntu-latest
     needs: prepare
     strategy:
       fail-fast: false
-      matrix:
-        platform:
-          - linux/amd64
-          - linux/arm64
+      matrix: ${{ fromJSON(needs.prepare.outputs.build_matrix) }}
     permissions:
       contents: read
     steps:
@@ -110,39 +172,43 @@ jobs:
           pull: true
           push: true
           build-args: |
-            BASE_IMAGE=${{ needs.prepare.outputs.base_image }}
+            BASE_IMAGE=${{ matrix.base_image }}
             SSH_PUBLIC_KEY=${{ secrets.SSH_PUBLIC_KEY }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.description=Extended dev image built from ${{ needs.prepare.outputs.base_image }}
-          outputs: type=image,name=${{ secrets.DOCKERHUB_USERNAME }}/${{ needs.prepare.outputs.image_name }},name-canonical=true,push-by-digest=true
+            org.opencontainers.image.description=Extended dev image built from ${{ matrix.base_image }}
+          outputs: type=image,name=${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image_name }},name-canonical=true,push-by-digest=true
 
       - name: Export digest
         shell: bash
         run: |
-          mkdir -p /tmp/digests
+          mkdir -p "/tmp/digests/${{ matrix.variant }}"
           digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
+          touch "/tmp/digests/${{ matrix.variant }}/${digest#sha256:}"
 
       - name: Upload digest artifact
         uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
-          path: /tmp/digests/*
+          name: digests-${{ matrix.variant }}-${{ matrix.arch }}
+          path: /tmp/digests/${{ matrix.variant }}/*
           if-no-files-found: error
           retention-days: 1
 
   merge:
+    name: Merge ${{ matrix.variant }}
     runs-on: ubuntu-latest
     needs:
       - prepare
       - build
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.variant_matrix) }}
     steps:
       - name: Download digest artifacts
         uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
-          pattern: digests-*
+          pattern: digests-${{ matrix.variant }}-*
           merge-multiple: true
 
       - name: Set up Docker Buildx
@@ -161,7 +227,7 @@ jobs:
           shopt -s nullglob
           refs=()
           for digest_file in *; do
-            refs+=("${{ secrets.DOCKERHUB_USERNAME }}/${{ needs.prepare.outputs.image_name }}@sha256:${digest_file}")
+            refs+=("${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image_name }}@sha256:${digest_file}")
           done
 
           if [ "${#refs[@]}" -eq 0 ]; then
@@ -170,5 +236,5 @@ jobs:
           fi
 
           docker buildx imagetools create \
-            --tag "${{ secrets.DOCKERHUB_USERNAME }}/${{ needs.prepare.outputs.image_name }}:${{ needs.prepare.outputs.image_tag }}" \
+            --tag "${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image_name }}:${{ matrix.image_tag }}" \
             "${refs[@]}"

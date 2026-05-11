@@ -4,11 +4,15 @@
 
 默认配置：
 
-- 基础镜像：`lmsysorg/sglang:dev`
-- 推送仓库：`DOCKERHUB_USERNAME/sglang:dev`
+- 基础镜像：
+  - `lmsysorg/sglang:dev`
+  - `lmsysorg/sglang:dev-cu13`
+- 推送仓库：
+  - `DOCKERHUB_USERNAME/sglang:dev`
+  - `DOCKERHUB_USERNAME/sglang:dev-cu13`
 - 定时任务：每天 `03:00 UTC`
 - VS Code Server：构建时自动拉取最新 `stable`
-- 多架构：同时推送 `linux/amd64` 和 `linux/arm64`
+- 多架构：每个 tag 都同时推送 `linux/amd64` 和 `linux/arm64`
 
 ## 需要配置的 GitHub Secrets
 
@@ -27,13 +31,12 @@ workflow 会在以下场景运行：
 
 构建时会：
 
-1. 拉取基础镜像
+1. 拉取对应的基础镜像
 2. 用当前仓库里的 `Dockerfile` 继续构建
-3. 推送多个 tag 到 Docker Hub，包括：
-   - 主 tag，默认 `dev`
-   - 基础镜像对应的 tag 变体
-   - 时间戳 tag
-   - Git SHA tag
+3. 分别构建 `linux/amd64` 和 `linux/arm64`
+4. 合并并推送多架构 manifest：
+   - `DOCKERHUB_USERNAME/sglang:dev`
+   - `DOCKERHUB_USERNAME/sglang:dev-cu13`
 
 ## 自定义开发工具
 
@@ -45,6 +48,11 @@ workflow 会在以下场景运行：
 
 如果你想手动指定别的基础镜像，可以在 GitHub Actions 页面运行 `Build and Push Dev Image`，并填写：
 
+- `build_variant`：
+  - `all`：默认，同时构建 `dev` 和 `dev-cu13`
+  - `dev`：只构建 `DOCKERHUB_USERNAME/sglang:dev`
+  - `dev-cu13`：只构建 `DOCKERHUB_USERNAME/sglang:dev-cu13`
+  - `custom`：使用下面的手动配置
 - `base_image`：例如 `lmsysorg/sglang:dev`
 - `image_name`：例如 `sglang`
 - `image_tag`：例如 `dev`
@@ -55,4 +63,10 @@ workflow 会在以下场景运行：
 docker build \
   --build-arg BASE_IMAGE=lmsysorg/sglang:dev \
   -t your-dockerhub-name/sglang:dev ./docker
+```
+
+```bash
+docker build \
+  --build-arg BASE_IMAGE=lmsysorg/sglang:dev-cu13 \
+  -t your-dockerhub-name/sglang:dev-cu13 ./docker
 ```
