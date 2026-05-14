@@ -115,8 +115,13 @@ RUN set -eux; \
       --install-extension tamasfe.even-better-toml \
       --install-extension tht13.rst-vscode \
       --install-extension drain99.perfetto-trace \
-      --install-extension openai.chatgpt \
-      --install-extension github.copilot-chat
+      --install-extension openai.chatgpt; \
+    "${VSCODE_SERVER_DIR}/bin/${vscode_commit}/bin/code" \
+      --force \
+      --user-data-dir "${VSCODE_SERVER_DIR}/data" \
+      --extensions-dir "${VSCODE_EXTENSIONS_DIR}" \
+      --install-extension github.copilot-chat \
+      || echo "Optional extension github.copilot-chat failed to install; continuing."
 
 EXPOSE 22
 
